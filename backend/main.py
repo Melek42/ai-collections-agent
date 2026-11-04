@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -8,20 +9,40 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from ai import generate_text  # noqa: E402
+from db import close_pool, query  # noqa: E402
+from routes_invoices import router as invoices_router  # noqa: E402
 
-app = FastAPI(title="AI Collections Agent")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    close_pool()
+
+
+app = FastAPI(title="AI Collections Agent", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(invoices_router)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "ai-collections-agent"}
+
+
+@app.get("/health/db")
+def health_db():
+    try:
+        rows = query("select count(*) as invoices from invoices")
+        return {"ok": True, **rows[0]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/ai-test")
