@@ -5,12 +5,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+
 # Load .env BEFORE importing our own modules
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from ai import generate_text  # noqa: E402
 from db import close_pool, query  # noqa: E402
 from routes_invoices import router as invoices_router  # noqa: E402
+from routes_drafts import router as drafts_router  # noqa: E402
 
 
 @asynccontextmanager
@@ -29,7 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(invoices_router)
-
+app.include_router(drafts_router)
 
 @app.get("/health")
 def health():
