@@ -13,6 +13,8 @@ from ai import generate_text  # noqa: E402
 from db import close_pool, query  # noqa: E402
 from routes_invoices import router as invoices_router  # noqa: E402
 from routes_drafts import router as drafts_router  # noqa: E402
+from routes_settings import router as settings_router  # noqa: E402
+from routes_jobs import router as jobs_router  # noqa: E402
 
 
 @asynccontextmanager
@@ -32,6 +34,9 @@ app.add_middleware(
 
 app.include_router(invoices_router)
 app.include_router(drafts_router)
+app.include_router(settings_router)
+app.include_router(jobs_router)
+
 
 @app.get("/health")
 def health():

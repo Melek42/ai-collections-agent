@@ -30,6 +30,27 @@ function DraftCard({ draft, onChanged, onError, onNotice }) {
         }
     }
 
+    async function approve() {
+        setBusy(true)
+        try {
+            const r = await api.approveDraft(draft.id)
+            const s = r.send
+            if (s.sent.length) {
+                onNotice(`Approved and sent to ${s.sent[0].to}. Check your inbox.`)
+            } else {
+                const why = s.held || (s.failed[0] && s.failed[0].error) || 'queued'
+                onNotice(`Approved, but not sent yet: ${why}.`)
+            }
+            onChanged()
+        } catch (e) {
+            onError(e.message)
+        } finally {
+            setBusy(false)
+        }
+    }
+
+
+
     const save = () =>
         act(async () => {
             await api.editDraft(draft.id, { subject, body })
@@ -99,7 +120,7 @@ function DraftCard({ draft, onChanged, onError, onNotice }) {
                 ) : (
                     <>
                         <button
-                            onClick={() => act(() => api.approveDraft(draft.id), 'Draft approved.')}
+                                onClick={approve}
                             disabled={busy}
                             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white disabled:opacity-50"
                         >

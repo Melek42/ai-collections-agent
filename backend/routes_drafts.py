@@ -8,15 +8,11 @@ from pydantic import BaseModel, Field
 from auth import current_owner
 from db import query
 from drafting import DraftError, build_facts, create_draft, validate_draft
+from outbox import ensure_settings, flush_outbox
 from routes_invoices import INVOICE_SELECT, log_event
 from stages import STAGES, stage_for
 
 router = APIRouter()
-
-
-def ensure_settings(owner: str) -> dict:
-    query("insert into settings (owner_id) values (%s) on conflict (owner_id) do nothing", (owner,))
-    return query("select * from settings where owner_id = %s", (owner,))[0]
 
 
 def payment_history(owner: str, client_id) -> str:
@@ -68,7 +64,7 @@ def run_now(max_drafts: int = 5, owner: str = Depends(current_owner)):
         (owner,),
     )
 
-    drafted, escalated, skipped, failed = [], [], [], []
+    drafted, escalated, skipped, failed, new_ids = [], [], [], [], []
     for inv in invoices:
         label = f"{inv['number']} ({inv['client_name']})"
         client = clients[inv["client_id"]]
@@ -144,15 +140,25 @@ def run_now(max_drafts: int = 5, owner: str = Depends(current_owner)):
         )
         log_event(owner, inv["id"], "draft_created", {"stage": stage}, "agent")
         drafted.append(label)
+        new_ids.append((rows[0]["id"], inv["id"]))
 
-    return {"drafted": drafted, "escalated": escalated, "skipped": skipped, "failed": failed}
+    result = {"drafted": drafted, "escalated": escalated, "skipped": skipped, "failed": failed}
+
+    # Autopilot: approve the drafts from this run and send them (guardrails still apply)
+    if settings["mode"] == "autopilot" and new_ids:
+        for message_id, invoice_id in new_ids:
+            query("update messages set status = 'approved' where id = %s and status = 'draft'", (message_id,))
+            log_event(owner, invoice_id, "draft_auto_approved", {"message_id": str(message_id)}, "agent")
+        result["autosent"] = flush_outbox(owner, only=[m for m, _ in new_ids])
+
+    return result
 
 
 # ---------- review queue ----------
 @router.get("/drafts")
 def list_drafts(status: str = "draft", owner: str = Depends(current_owner)):
     sql = """
-      select m.id, m.subject, m.body, m.status, m.stage, m.tone, m.created_at,
+      select m.id, m.subject, m.body, m.status, m.stage, m.tone, m.created_at, m.sent_at,
              i.id as invoice_id, i.number, i.amount, i.currency, i.due_date,
              (current_date - i.due_date) as days_overdue,
              c.name as client_name, c.email as client_email,
@@ -171,7 +177,7 @@ def list_drafts(status: str = "draft", owner: str = Depends(current_owner)):
     if status != "all":
         sql += " and m.status = %s"
         params.append(status)
-    sql += " order by m.created_at desc"
+    sql += " order by coalesce(m.sent_at, m.created_at) desc"
     return query(sql, params)
 
 
@@ -208,7 +214,7 @@ def approve_draft(draft_id: UUID, owner: str = Depends(current_owner)):
         raise HTTPException(422, "This email can't be approved yet: " + "; ".join(problems))
     query("update messages set status = 'approved' where id = %s", (draft_id,))
     log_event(owner, d["invoice_id"], "draft_approved", {"message_id": str(draft_id)}, "owner")
-    return {"ok": True}
+    return {"ok": True, "send": flush_outbox(owner, only=[draft_id])}
 
 
 @router.post("/drafts/{draft_id}/reject")
@@ -219,3 +225,8 @@ def reject_draft(draft_id: UUID, owner: str = Depends(current_owner)):
     query("update messages set status = 'rejected' where id = %s", (draft_id,))
     log_event(owner, d["invoice_id"], "draft_rejected", {"message_id": str(draft_id)}, "owner")
     return {"ok": True}
+
+
+@router.post("/outbox/flush")
+def flush(owner: str = Depends(current_owner)):
+    return flush_outbox(owner)

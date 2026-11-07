@@ -34,7 +34,10 @@ export const api = {
     },
     // agent and approval queue
     runAgent: () => request('/agent/run-now?max_drafts=5', { method: 'POST' }),
-    drafts: () => request('/drafts'),
+    drafts: (status = 'draft') => request(`/drafts?status=${status}`),
+    flush: () => request('/outbox/flush', { method: 'POST' }),
+    settings: () => request('/settings'),
+    saveSettings: (body) => request('/settings', json('PUT', body)),
     editDraft: (id, body) => request(`/drafts/${id}`, json('PATCH', body)),
     approveDraft: (id) => request(`/drafts/${id}/approve`, { method: 'POST' }),
     rejectDraft: (id) => request(`/drafts/${id}/reject`, { method: 'POST' }),
