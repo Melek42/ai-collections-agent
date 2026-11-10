@@ -36,4 +36,4 @@ React (Vite) and Tailwind, Python FastAPI, Gemini API, Supabase Postgres, Resend
 
 ## Notes
 
-The free hosting tier sleeps when idle, so the first request after a pause can take about a minute.
+The free hosting tier sleeps when idle, so the first request after a pause can take about a minute.		
