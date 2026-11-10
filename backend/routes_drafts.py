@@ -50,6 +50,14 @@ def run_now(max_drafts: int = 5, owner: str = Depends(current_owner)):
         raise HTTPException(409, "The agent is paused (kill switch is on).")
 
     now = datetime.now(timezone.utc)
+        # Promises that were not kept: reopen those invoices so the agent follows up
+    broken = query(
+        "update invoices set status = 'overdue' where owner_id = %s and status = 'promised' "
+        "and promised_date < current_date returning id",
+        (owner,),
+    )
+    for b in broken:
+        log_event(owner, b["id"], "promise_broken", {}, "agent")
     clients = {c["id"]: c for c in query("select * from clients where owner_id = %s", (owner,))}
     msgs_by_invoice: dict = {}
     for m in query(
@@ -58,6 +66,15 @@ def run_now(max_drafts: int = 5, owner: str = Depends(current_owner)):
         (owner,),
     ):
         msgs_by_invoice.setdefault(m["invoice_id"], []).append(m)
+
+       waiting_on_owner = {
+        r["invoice_id"]
+        for r in query(
+            "select m.invoice_id from classifications c join messages m on m.id = c.message_id "
+            "where c.owner_id = %s and c.resolved = false",
+            (owner,),
+        )
+    }
 
     invoices = query(
         INVOICE_SELECT + " where i.owner_id = %s and i.status in ('upcoming','overdue') order by i.due_date asc",
@@ -81,6 +98,9 @@ def run_now(max_drafts: int = 5, owner: str = Depends(current_owner)):
             continue
         if inv["promised_date"] and inv["promised_date"] >= now.date():
             skip(f"client promised to pay on {inv['promised_date']}")
+            continue
+        if inv["id"] in waiting_on_owner:
+            skip("the client replied and the owner has not handled it yet")
             continue
 
         if stage == 4:
@@ -110,7 +130,12 @@ def run_now(max_drafts: int = 5, owner: str = Depends(current_owner)):
                 settings["business_name"] or "our company",
                 settings["tone_notes"],
                 stage,
-                payment_history(owner, inv["client_id"]),
+]           payment_history(owner, inv["client_id"])
+                + (
+                    f" They promised to pay on {inv['promised_date']} but did not."
+                    if inv["promised_date"]
+                    else ""
+                ),
             )
         except DraftError as e:
             failed.append({"invoice": label, "reason": str(e)})

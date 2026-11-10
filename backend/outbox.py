@@ -62,7 +62,7 @@ def flush_outbox(owner: str, only: list | None = None) -> dict:
         inv = query(INVOICE_SELECT + " where i.id = %s", (m["invoice_id"],))[0]
 
         # Never chase an invoice that was paid or disputed after the draft was written
-        if inv["status"] in ("paid", "disputed", "payment_pending"):
+        if inv["status"] in ("paid", "disputed", "payment_pending", "promised"):
             query("update messages set status = 'rejected' where id = %s", (m["id"],))
             log_event(owner, m["invoice_id"], "send_cancelled", {"reason": f"invoice is {inv['status']}"}, "agent")
             result["failed"].append({"invoice": inv["number"], "error": f"cancelled: invoice is {inv['status']}"})

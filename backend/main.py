@@ -14,6 +14,7 @@ from db import close_pool, query  # noqa: E402
 from routes_invoices import router as invoices_router  # noqa: E402
 from routes_drafts import router as drafts_router  # noqa: E402
 from routes_settings import router as settings_router  # noqa: E402
+from routes_replies import router as replies_router  # noqa: E402
 from routes_jobs import router as jobs_router  # noqa: E402
 
 
@@ -25,9 +26,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Collections Agent", lifespan=lifespan)
 
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -36,6 +43,7 @@ app.include_router(invoices_router)
 app.include_router(drafts_router)
 app.include_router(settings_router)
 app.include_router(jobs_router)
+app.include_router(replies_router)
 
 
 @app.get("/health")
